@@ -16,12 +16,14 @@ export const supabaseUrl =
   process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 
 export const supabaseAnonKey =
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+  process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  '';
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
-    '[Supabase PARCIAL2] ⚠️ Faltan credenciales en .env. ' +
-    'Configura EXPO_PUBLIC_SUPABASE_URL y EXPO_PUBLIC_SUPABASE_ANON_KEY con un proyecto NUEVO de Supabase.'
+    '[Supabase] ⚠️ Faltan credenciales en .env. ' +
+    'Configura EXPO_PUBLIC_SUPABASE_URL y EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY.'
   );
 }
 

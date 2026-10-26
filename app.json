@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "parcial",
-    "slug": "parcial",
+    "name": "Mi Tienda",
+    "slug": "mi-tienda",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",

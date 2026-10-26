@@ -1,944 +1,585 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
-  ScrollView,
   View,
-  TextInput,
+  Text,
+  FlatList,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Platform,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/context/AuthContext';
-import { supabase, supabaseUrl } from '@/lib/supabase';
-import { crudService } from '@/services/crudService';
-import { storageService } from '@/services/storageService';
-import { Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { useProducts } from '@/hooks/useProducts';
+import { syncProducts } from '@/services/sync';
+import type { Product } from '@/db/schema';
 
-type ActiveTab = 'status' | 'auth' | 'crud' | 'storage' | 'snippets';
+export default function InventarioScreen() {
+  const { user, signOut } = useAuth();
+  const { products, metrics, deleteProduct, isPending } = useProducts();
 
-export default function ParcialHomeScreen() {
-  const theme = useTheme();
-  const { session, user, isAuthenticated, signIn, signUp, signOut } = useAuth();
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<{
+    text: string;
+    type: 'success' | 'error';
+  } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('status');
+  // Acción: Sincronizar con Supabase
+  const handleSync = async () => {
+    if (!user?.id) {
+      setSyncMessage({
+        text: 'Debes tener una sesión activa para sincronizar.',
+        type: 'error',
+      });
+      return;
+    }
 
-  // Estado de conexión
-  const [connectionStatus, setConnectionStatus] = useState<
-    'idle' | 'testing' | 'success' | 'error'
-  >('idle');
-  const [connectionMsg, setConnectionMsg] = useState('');
-
-  // Estado de Auth
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [authLoading, setAuthLoading] = useState(false);
-
-  // Estado de CRUD
-  const [tableName, setTableName] = useState('tareas');
-  const [items, setItems] = useState<any[]>([]);
-  const [crudLoading, setCrudLoading] = useState(false);
-  const [newItemTitle, setNewItemTitle] = useState('');
-  const [newItemDesc, setNewItemDesc] = useState('');
-
-  // Estado de Storage
-  const [bucketName, setBucketName] = useState('geocam');
-  const [selectedImageUri, setSelectedImageUri] = useState<string | null>(null);
-  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
-  const [uploadLoading, setUploadLoading] = useState(false);
-
-  // Prueba inicial de conexión
-  useEffect(() => {
-    testConnection();
-  }, []);
-
-  const testConnection = async () => {
     try {
-      setConnectionStatus('testing');
-      setConnectionMsg('Comprobando conexión con Supabase...');
-      const startTime = Date.now();
-      const { data, error } = await supabase.auth.getSession();
-      const latency = Date.now() - startTime;
+      setSyncing(true);
+      setSyncMessage(null);
+      const result = await syncProducts(user.id);
 
-      if (error) {
-        setConnectionStatus('error');
-        setConnectionMsg(`Error: ${error.message}`);
+      if (result.success) {
+        setSyncMessage({
+          text: `Sincronización exitosa: ${result.message}`,
+          type: 'success',
+        });
       } else {
-        setConnectionStatus('success');
-        setConnectionMsg(`Conexión exitosa (${latency} ms)`);
+        setSyncMessage({
+          text: result.message,
+          type: 'error',
+        });
       }
     } catch (err: any) {
-      setConnectionStatus('error');
-      setConnectionMsg(err?.message || 'Fallo de red al conectar');
-    }
-  };
-
-  // Handlers de Auth
-  const handleSignIn = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Atención', 'Ingresa email y contraseña');
-      return;
-    }
-    try {
-      setAuthLoading(true);
-      await signIn(email, password);
-      Alert.alert('Éxito', 'Sesión iniciada correctamente');
-      setEmail('');
-      setPassword('');
-    } catch (err: any) {
-      Alert.alert('Error de Autenticación', err.message || 'No fue posible iniciar sesión');
+      setSyncMessage({
+        text: `Error de red: ${err?.message || 'Sin conexión a internet'}`,
+        type: 'error',
+      });
     } finally {
-      setAuthLoading(false);
+      setSyncing(false);
     }
   };
 
-  const handleSignUp = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Atención', 'Ingresa email y contraseña');
-      return;
-    }
-    if (password.length < 6) {
-      Alert.alert('Seguridad', 'La contraseña debe tener mínimo 6 caracteres');
-      return;
-    }
-    try {
-      setAuthLoading(true);
-      await signUp(email, password);
-      Alert.alert(
-        'Registro enviado',
-        'Usuario registrado. Si tu proyecto tiene confirmación de email activa, revisa tu correo.'
-      );
-    } catch (err: any) {
-      Alert.alert('Error de Registro', err.message || 'No fue posible registrarse');
-    } finally {
-      setAuthLoading(false);
-    }
+  // Acción: Confirmar y Eliminar producto de SQLite local
+  const handleDelete = (product: Product) => {
+    Alert.alert(
+      'Eliminar Producto',
+      `¿Deseas eliminar "${product.name}" del inventario local?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteProduct(product.id);
+            } catch (err: any) {
+              Alert.alert('Error', 'No se pudo eliminar el producto de SQLite.');
+            }
+          },
+        },
+      ]
+    );
   };
 
-  const handleSignOut = async () => {
-    try {
-      setAuthLoading(true);
-      await signOut();
-      Alert.alert('Sesión cerrada', 'Has cerrado sesión con éxito');
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Error al cerrar sesión');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  // Handlers de CRUD
-  const loadTableData = async () => {
-    if (!tableName.trim()) return;
-    try {
-      setCrudLoading(true);
-      const data = await crudService.getAll(tableName.trim(), { limit: 25 });
-      setItems(data);
-    } catch (err: any) {
-      Alert.alert(
-        `Error al consultar "${tableName}"`,
-        err.message || 'Verifica el nombre de la tabla o las políticas RLS en Supabase'
-      );
-    } finally {
-      setCrudLoading(false);
-    }
-  };
-
-  const handleCreateRecord = async () => {
-    if (!tableName.trim()) return;
-    if (!newItemTitle.trim()) {
-      Alert.alert('Atención', 'Ingresa al menos un título o dato');
-      return;
-    }
-
-    try {
-      setCrudLoading(true);
-      // Intentamos insertar con campos comunes: titulo/nombre y descripcion
-      const newRecord: any = {
-        titulo: newItemTitle.trim(),
-        nombre: newItemTitle.trim(),
-        descripcion: newItemDesc.trim(),
-      };
-      if (user?.id) {
-        newRecord.user_id = user.id;
-      }
-
-      await crudService.insert(tableName.trim(), newRecord);
-      Alert.alert('Guardado', 'Registro insertado en Supabase');
-      setNewItemTitle('');
-      setNewItemDesc('');
-      await loadTableData();
-    } catch (err: any) {
-      Alert.alert('Error de Inserción', err.message || 'No se pudo insertar');
-    } finally {
-      setCrudLoading(false);
-    }
-  };
-
-  const handleDeleteRecord = async (id: any) => {
-    try {
-      setCrudLoading(true);
-      await crudService.delete(tableName.trim(), id);
-      await loadTableData();
-    } catch (err: any) {
-      Alert.alert('Error al eliminar', err.message || 'No se pudo eliminar');
-    } finally {
-      setCrudLoading(false);
-    }
-  };
-
-  // Handlers de Storage
-  const handlePickImage = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permiso denegado', 'Se necesita acceso a la galería para seleccionar imágenes.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets[0]?.uri) {
-      setSelectedImageUri(result.assets[0].uri);
-    }
-  };
-
-  const handleUploadImage = async () => {
-    if (!selectedImageUri) {
-      Alert.alert('Atención', 'Primero selecciona una imagen');
-      return;
-    }
-
-    try {
-      setUploadLoading(true);
-      const filename = `img_${Date.now()}.jpg`;
-      const targetPath = user?.id ? `${user.id}/${filename}` : `publicos/${filename}`;
-
-      const uploadedPath = await storageService.uploadFile(
-        bucketName.trim(),
-        targetPath,
-        selectedImageUri,
-        { contentType: 'image/jpeg' }
-      );
-
-      const publicUrl = storageService.getPublicUrl(bucketName.trim(), uploadedPath);
-      setUploadedUrl(publicUrl);
-      Alert.alert('¡Subida exitosa!', `Archivo subido a Supabase Storage: ${uploadedPath}`);
-    } catch (err: any) {
-      Alert.alert('Error al subir', err.message || 'No fue posible subir la imagen al bucket');
-    } finally {
-      setUploadLoading(false);
-    }
+  // Acción: Cerrar Sesión con confirmación
+  const handleSignOut = () => {
+    Alert.alert('Cerrar Sesión', '¿Estás seguro de que deseas salir de Mi Tienda?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Cerrar Sesión',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await signOut();
+          } catch (err: any) {
+            Alert.alert('Error', 'No se pudo cerrar sesión.');
+          }
+        },
+      },
+    ]);
   };
 
   return (
-    <ThemedView style={styles.screen}>
-      <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          {/* Header principal */}
-          <ThemedView type="backgroundElement" style={styles.headerCard}>
-            <View style={styles.headerRow}>
-              <View>
-                <ThemedText type="title" style={styles.headerTitle}>
-                  Parcial 2 🚀
-                </ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  React Native + Expo SDK 58 + Supabase
-                </ThemedText>
+    <SafeAreaView style={styles.safeArea}>
+      {/* Barra Superior */}
+      <View style={styles.topBar}>
+        <View style={styles.branding}>
+          <Ionicons name="storefront" size={26} color="#2563EB" />
+          <View style={{ marginLeft: 8 }}>
+            <Text style={styles.appName}>Mi Tienda</Text>
+            <Text style={styles.userEmail} numberOfLines={1}>
+              {user?.email || 'Modo Offline'}
+            </Text>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={styles.signOutButton}
+          onPress={handleSignOut}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="log-out-outline" size={20} color="#DC2626" />
+          <Text style={styles.signOutText}>Salir</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Banner de Sincronización si existe */}
+      {syncMessage ? (
+        <View
+          style={[
+            styles.syncBanner,
+            syncMessage.type === 'success' ? styles.bannerSuccess : styles.bannerError,
+          ]}>
+          <Ionicons
+            name={
+              syncMessage.type === 'success' ? 'checkmark-circle' : 'cloud-offline-outline'
+            }
+            size={18}
+            color={syncMessage.type === 'success' ? '#15803D' : '#B91C1C'}
+          />
+          <Text
+            style={[
+              styles.syncBannerText,
+              syncMessage.type === 'success' ? styles.textSuccess : styles.textError,
+            ]}>
+            {syncMessage.text}
+          </Text>
+          <TouchableOpacity onPress={() => setSyncMessage(null)}>
+            <Ionicons name="close" size={18} color="#6B7280" />
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      <FlatList
+        data={products}
+        keyExtractor={(item) => String(item.id)}
+        contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl refreshing={syncing} onRefresh={handleSync} colors={['#2563EB']} />
+        }
+        ListHeaderComponent={
+          <>
+            {/* Tarjetas de Resumen Superior (Métricas) */}
+            <View style={styles.metricsContainer}>
+              {/* Unidades Totales */}
+              <View style={[styles.metricCard, { borderLeftColor: '#2563EB' }]}>
+                <Text style={styles.metricLabel}>Total Unidades</Text>
+                <Text style={styles.metricValue}>{metrics.totalUnits}</Text>
+                <Text style={styles.metricSub}>en stock</Text>
               </View>
+
+              {/* Valor del Inventario */}
+              <View style={[styles.metricCard, { borderLeftColor: '#059669' }]}>
+                <Text style={styles.metricLabel}>Valor Inventario</Text>
+                <Text style={styles.metricValue}>
+                  ${metrics.totalValue.toLocaleString('es-CO')}
+                </Text>
+                <Text style={styles.metricSub}>COP</Text>
+              </View>
+
+              {/* Pendientes por Sincronizar */}
               <View
                 style={[
-                  styles.statusBadge,
-                  connectionStatus === 'success'
-                    ? styles.badgeSuccess
-                    : connectionStatus === 'error'
-                    ? styles.badgeError
-                    : styles.badgeTesting,
+                  styles.metricCard,
+                  {
+                    borderLeftColor: metrics.pendingCount > 0 ? '#D97706' : '#16A34A',
+                  },
                 ]}>
-                <Ionicons
-                  name={
-                    connectionStatus === 'success'
-                      ? 'checkmark-circle'
-                      : connectionStatus === 'error'
-                      ? 'alert-circle'
-                      : 'sync'
-                  }
-                  size={14}
-                  color="#fff"
-                />
-                <ThemedText style={styles.statusBadgeText}>
-                  {connectionStatus === 'success'
-                    ? 'Conectado'
-                    : connectionStatus === 'error'
-                    ? 'Error'
-                    : 'Verificando'}
-                </ThemedText>
+                <Text style={styles.metricLabel}>Por Subir</Text>
+                <Text
+                  style={[
+                    styles.metricValue,
+                    { color: metrics.pendingCount > 0 ? '#D97706' : '#16A34A' },
+                  ]}>
+                  {metrics.pendingCount}
+                </Text>
+                <Text style={styles.metricSub}>
+                  {metrics.pendingCount === 0 ? 'Al día ☁️' : 'Pendientes ⚠️'}
+                </Text>
               </View>
             </View>
 
-            <ThemedText type="small" style={styles.endpointText} numberOfLines={1}>
-              URL: {supabaseUrl || 'No configurada'}
-            </ThemedText>
-            {connectionMsg ? (
-              <ThemedText type="small" themeColor="textSecondary" style={styles.statusMsg}>
-                {connectionMsg}
-              </ThemedText>
-            ) : null}
-          </ThemedView>
+            {/* Barra de Acciones Principales */}
+            <View style={styles.actionsBar}>
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => router.push('/producto')}>
+                <Ionicons name="add-circle" size={20} color="#FFFFFF" />
+                <Text style={styles.addButtonText}>Nuevo Producto</Text>
+              </TouchableOpacity>
 
-          {/* Selector de pestañas */}
-          <View style={styles.tabBar}>
-            {(
-              [
-                { id: 'status', label: 'Inicio', icon: 'speedometer-outline' },
-                { id: 'auth', label: 'Auth', icon: 'lock-closed-outline' },
-                { id: 'crud', label: 'Tablas', icon: 'server-outline' },
-                { id: 'storage', label: 'Storage', icon: 'cloud-upload-outline' },
-                { id: 'snippets', label: 'Cheatsheet', icon: 'code-slash-outline' },
-              ] as const
-            ).map((tab) => {
-              const active = activeTab === tab.id;
-              return (
-                <TouchableOpacity
-                  key={tab.id}
-                  style={[styles.tabButton, active && styles.tabButtonActive]}
-                  onPress={() => setActiveTab(tab.id)}>
-                  <Ionicons
-                    name={tab.icon}
-                    size={18}
-                    color={active ? '#2563EB' : theme.textSecondary}
-                  />
-                  <ThemedText
-                    type="small"
-                    style={[
-                      styles.tabButtonText,
-                      active && { color: '#2563EB', fontWeight: 'bold' },
-                    ]}>
-                    {tab.label}
-                  </ThemedText>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* CONTENIDO DE CADA PESTAÑA */}
-
-          {/* TAB 1: INICIO & RESUMEN */}
-          {activeTab === 'status' && (
-            <View style={styles.sectionContainer}>
-              <ThemedView type="backgroundElement" style={styles.card}>
-                <ThemedText type="subtitle">Estado General del Proyecto</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary" style={{ marginTop: 4 }}>
-                  Todo el entorno está listo para responder a cualquier requerimiento de tu examen:
-                </ThemedText>
-
-                <View style={styles.featureList}>
-                  <FeatureItem
-                    icon="checkmark-done"
-                    title="Supabase SDK 2.x"
-                    desc="Cliente configurado en src/lib/supabase.ts"
-                  />
-                  <FeatureItem
-                    icon="shield-checkmark"
-                    title="Almacenamiento Seguro"
-                    desc="expo-secure-store particionado (chunking) para tokens"
-                  />
-                  <FeatureItem
-                    icon="person"
-                    title="Contexto de Autenticación"
-                    desc="useAuth() con signIn, signUp, signOut y persistencia"
-                  />
-                  <FeatureItem
-                    icon="layers"
-                    title="CRUD Universal & Hooks"
-                    desc="crudService y hook useSupabaseTable para cualquier tabla"
-                  />
-                  <FeatureItem
-                    icon="images"
-                    title="Supabase Storage Binario"
-                    desc="Subida con ArrayBuffer (evita archivos corruptos de 0 bytes)"
-                  />
-                  <FeatureItem
-                    icon="hardware-chip"
-                    title="Módulos Nativos de Apoyo"
-                    desc="ImagePicker, FileSystem, SQLite, Crypto y Vector Icons listos"
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.actionBtn, { marginTop: Spacing.three }]}
-                  onPress={testConnection}
-                  disabled={connectionStatus === 'testing'}>
-                  {connectionStatus === 'testing' ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <>
-                      <Ionicons name="refresh" size={16} color="#fff" />
-                      <ThemedText style={styles.actionBtnText}>Re-probar Conexión Supabase</ThemedText>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </ThemedView>
-            </View>
-          )}
-
-          {/* TAB 2: AUTENTICACIÓN */}
-          {activeTab === 'auth' && (
-            <View style={styles.sectionContainer}>
-              <ThemedView type="backgroundElement" style={styles.card}>
-                <ThemedText type="subtitle">Módulo de Autenticación</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary" style={{ marginTop: 4 }}>
-                  Sesiones persistentes con SecureStore y auto-refresh.
-                </ThemedText>
-
-                <View style={styles.userStatusBox}>
-                  <ThemedText type="small" style={{ fontWeight: 'bold' }}>
-                    Estado actual:{' '}
-                    <ThemedText
-                      type="small"
-                      style={{ color: isAuthenticated ? '#16A34A' : '#DC2626' }}>
-                      {isAuthenticated ? 'AUTENTICADO' : 'INVITADO (Sin sesión)'}
-                    </ThemedText>
-                  </ThemedText>
-                  {user && (
-                    <>
-                      <ThemedText type="small" style={{ marginTop: 4 }}>
-                        Email: {user.email}
-                      </ThemedText>
-                      <ThemedText type="code" style={{ fontSize: 11, marginTop: 2 }}>
-                        UID: {user.id}
-                      </ThemedText>
-                    </>
-                  )}
-                </View>
-
-                {isAuthenticated ? (
-                  <TouchableOpacity
-                    style={[styles.actionBtn, styles.btnDanger, { marginTop: Spacing.two }]}
-                    onPress={handleSignOut}
-                    disabled={authLoading}>
-                    {authLoading ? (
-                      <ActivityIndicator color="#fff" size="small" />
-                    ) : (
-                      <>
-                        <Ionicons name="log-out-outline" size={18} color="#fff" />
-                        <ThemedText style={styles.actionBtnText}>Cerrar Sesión</ThemedText>
-                      </>
-                    )}
-                  </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.syncButton, syncing && styles.buttonDisabled]}
+                onPress={handleSync}
+                disabled={syncing}>
+                {syncing ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
-                  <View style={{ marginTop: Spacing.two }}>
-                    <ThemedText type="small" style={styles.inputLabel}>
-                      Correo electrónico:
-                    </ThemedText>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="ejemplo@correo.com"
-                      placeholderTextColor="#888"
-                      value={email}
-                      onChangeText={setEmail}
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                    />
-
-                    <ThemedText type="small" style={[styles.inputLabel, { marginTop: Spacing.two }]}>
-                      Contraseña:
-                    </ThemedText>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Mínimo 6 caracteres"
-                      placeholderTextColor="#888"
-                      value={password}
-                      onChangeText={setPassword}
-                      secureTextEntry
-                    />
-
-                    <View style={styles.buttonRow}>
-                      <TouchableOpacity
-                        style={[styles.actionBtn, { flex: 1, marginRight: 6 }]}
-                        onPress={handleSignIn}
-                        disabled={authLoading}>
-                        {authLoading ? (
-                          <ActivityIndicator color="#fff" size="small" />
-                        ) : (
-                          <ThemedText style={styles.actionBtnText}>Iniciar Sesión</ThemedText>
-                        )}
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[styles.actionBtn, styles.btnSecondary, { flex: 1, marginLeft: 6 }]}
-                        onPress={handleSignUp}
-                        disabled={authLoading}>
-                        {authLoading ? (
-                          <ActivityIndicator color="#fff" size="small" />
-                        ) : (
-                          <ThemedText style={styles.actionBtnText}>Registrarse</ThemedText>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  </View>
+                  <>
+                    <Ionicons name="sync" size={18} color="#FFFFFF" />
+                    <Text style={styles.syncButtonText}>Sincronizar</Text>
+                  </>
                 )}
-              </ThemedView>
+              </TouchableOpacity>
             </View>
-          )}
 
-          {/* TAB 3: CRUD & TABLAS */}
-          {activeTab === 'crud' && (
-            <View style={styles.sectionContainer}>
-              <ThemedView type="backgroundElement" style={styles.card}>
-                <ThemedText type="subtitle">Operaciones CRUD en Tablas</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary" style={{ marginTop: 4 }}>
-                  Interactúa directamente con cualquier tabla de tu Supabase.
-                </ThemedText>
+            {/* Título de la sección de lista */}
+            <View style={styles.listSectionHeader}>
+              <Text style={styles.listSectionTitle}>
+                Inventario Local ({products.length} productos)
+              </Text>
+              <Text style={styles.listSectionHelper}>
+                Toca para editar • Mantén presionado para eliminar
+              </Text>
+            </View>
+          </>
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Ionicons name="file-tray-outline" size={54} color="#9CA3AF" />
+            <Text style={styles.emptyTitle}>Inventario vacío</Text>
+            <Text style={styles.emptySubtitle}>
+              Presiona "Nuevo Producto" para agregar artículos a tu tienda. Funciona 100% offline.
+            </Text>
+          </View>
+        }
+        renderItem={({ item }) => {
+          const pending = isPending(item);
+          const subtotal = item.quantity * item.price;
 
-                <View style={{ marginTop: Spacing.two }}>
-                  <ThemedText type="small" style={styles.inputLabel}>
-                    Nombre de la tabla:
-                  </ThemedText>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <TextInput
-                      style={[styles.input, { flex: 1 }]}
-                      placeholder="Nombre de tabla (ej: tareas, photos)"
-                      placeholderTextColor="#888"
-                      value={tableName}
-                      onChangeText={setTableName}
-                      autoCapitalize="none"
-                    />
-                    <TouchableOpacity
-                      style={[styles.actionBtn, { minWidth: 90 }]}
-                      onPress={loadTableData}
-                      disabled={crudLoading}>
-                      {crudLoading ? (
-                        <ActivityIndicator color="#fff" size="small" />
-                      ) : (
-                        <ThemedText style={styles.actionBtnText}>Cargar</ThemedText>
-                      )}
-                    </TouchableOpacity>
-                  </View>
+          return (
+            <TouchableOpacity
+              style={styles.productCard}
+              onPress={() => router.push(`/producto?id=${item.id}`)}
+              onLongPress={() => handleDelete(item)}
+              activeOpacity={0.7}>
+              <View style={styles.productHeader}>
+                <Text style={styles.productName} numberOfLines={1}>
+                  {item.name}
+                </Text>
+
+                {/* Badge de Sincronización */}
+                <View
+                  style={[
+                    styles.syncBadge,
+                    pending ? styles.badgePending : styles.badgeSynced,
+                  ]}>
+                  <Ionicons
+                    name={pending ? 'time-outline' : 'cloud-done-outline'}
+                    size={13}
+                    color={pending ? '#B45309' : '#15803D'}
+                  />
+                  <Text
+                    style={[
+                      styles.syncBadgeText,
+                      pending ? styles.textPending : styles.textSynced,
+                    ]}>
+                    {pending ? 'Pendiente' : 'Sincronizado'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.productBody}>
+                <View style={styles.productInfoRow}>
+                  <Text style={styles.productDetail}>
+                    Cantidad: <Text style={styles.boldText}>{item.quantity} unds</Text>
+                  </Text>
+                  <Text style={styles.productDetail}>
+                    Precio: <Text style={styles.boldText}>${item.price.toLocaleString('es-CO')}</Text>
+                  </Text>
                 </View>
 
-                {/* Formulario rápido para insertar */}
-                <View style={styles.insertBox}>
-                  <ThemedText type="small" style={{ fontWeight: 'bold' }}>
-                    + Insertar nuevo registro en "{tableName}"
-                  </ThemedText>
-                  <TextInput
-                    style={[styles.input, { marginTop: 6 }]}
-                    placeholder="Título o Nombre"
-                    placeholderTextColor="#888"
-                    value={newItemTitle}
-                    onChangeText={setNewItemTitle}
-                  />
-                  <TextInput
-                    style={[styles.input, { marginTop: 6 }]}
-                    placeholder="Descripción o detalle (opcional)"
-                    placeholderTextColor="#888"
-                    value={newItemDesc}
-                    onChangeText={setNewItemDesc}
-                  />
+                <View style={styles.productFooterRow}>
+                  <Text style={styles.subtotalText}>
+                    Subtotal: ${subtotal.toLocaleString('es-CO')}
+                  </Text>
+
                   <TouchableOpacity
-                    style={[styles.actionBtn, styles.btnSuccess, { marginTop: 8 }]}
-                    onPress={handleCreateRecord}
-                    disabled={crudLoading}>
-                    <ThemedText style={styles.actionBtnText}>Guardar en Supabase</ThemedText>
+                    style={styles.deleteIconButton}
+                    onPress={() => handleDelete(item)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="trash-outline" size={18} color="#DC2626" />
                   </TouchableOpacity>
                 </View>
-
-                {/* Lista de registros */}
-                <View style={{ marginTop: Spacing.three }}>
-                  <ThemedText type="small" style={{ fontWeight: 'bold' }}>
-                    Registros en Supabase ({items.length}):
-                  </ThemedText>
-
-                  {items.length === 0 ? (
-                    <ThemedText
-                      type="small"
-                      themeColor="textSecondary"
-                      style={{ marginTop: 8, fontStyle: 'italic' }}>
-                      No hay registros cargados o la tabla está vacía. Presiona "Cargar".
-                    </ThemedText>
-                  ) : (
-                    items.map((item, index) => {
-                      const id = item.id ?? item.client_id ?? index;
-                      const title = item.titulo || item.nombre || item.title || item.note || `Item #${id}`;
-                      return (
-                        <View key={String(id)} style={styles.recordCard}>
-                          <View style={{ flex: 1 }}>
-                            <ThemedText type="small" style={{ fontWeight: 'bold' }}>
-                              {title}
-                            </ThemedText>
-                            <ThemedText type="code" style={{ fontSize: 11, marginTop: 2 }}>
-                              ID: {String(id)} {item.created_at ? `• ${new Date(item.created_at).toLocaleDateString()}` : ''}
-                            </ThemedText>
-                            {item.descripcion && (
-                              <ThemedText type="small" themeColor="textSecondary" style={{ marginTop: 2 }}>
-                                {item.descripcion}
-                              </ThemedText>
-                            )}
-                          </View>
-                          <TouchableOpacity
-                            onPress={() => handleDeleteRecord(id)}
-                            style={styles.deleteBtn}>
-                            <Ionicons name="trash-outline" size={18} color="#DC2626" />
-                          </TouchableOpacity>
-                        </View>
-                      );
-                    })
-                  )}
-                </View>
-              </ThemedView>
-            </View>
-          )}
-
-          {/* TAB 4: STORAGE */}
-          {activeTab === 'storage' && (
-            <View style={styles.sectionContainer}>
-              <ThemedView type="backgroundElement" style={styles.card}>
-                <ThemedText type="subtitle">Supabase Storage</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary" style={{ marginTop: 4 }}>
-                  Subida binaria con ArrayBuffer para evitar archivos de 0 bytes en React Native.
-                </ThemedText>
-
-                <View style={{ marginTop: Spacing.two }}>
-                  <ThemedText type="small" style={styles.inputLabel}>
-                    Bucket de destino:
-                  </ThemedText>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="geocam, archivos, avatares..."
-                    placeholderTextColor="#888"
-                    value={bucketName}
-                    onChangeText={setBucketName}
-                    autoCapitalize="none"
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.actionBtn, styles.btnSecondary, { marginTop: Spacing.two }]}
-                  onPress={handlePickImage}>
-                  <Ionicons name="image-outline" size={18} color="#fff" />
-                  <ThemedText style={styles.actionBtnText}>Seleccionar Foto de Galería</ThemedText>
-                </TouchableOpacity>
-
-                {selectedImageUri && (
-                  <View style={styles.previewBox}>
-                    <ThemedText type="small" style={{ fontWeight: 'bold' }}>
-                      Previsualización:
-                    </ThemedText>
-                    <Image source={{ uri: selectedImageUri }} style={styles.imagePreview} />
-                    <TouchableOpacity
-                      style={[styles.actionBtn, styles.btnSuccess, { marginTop: 10 }]}
-                      onPress={handleUploadImage}
-                      disabled={uploadLoading}>
-                      {uploadLoading ? (
-                        <ActivityIndicator color="#fff" size="small" />
-                      ) : (
-                        <>
-                          <Ionicons name="cloud-upload" size={18} color="#fff" />
-                          <ThemedText style={styles.actionBtnText}>Subir al Bucket "{bucketName}"</ThemedText>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {uploadedUrl && (
-                  <View style={[styles.userStatusBox, { marginTop: Spacing.three }]}>
-                    <ThemedText type="small" style={{ fontWeight: 'bold', color: '#16A34A' }}>
-                      ✓ Archivo subido:
-                    </ThemedText>
-                    <ThemedText type="code" style={{ fontSize: 11, marginTop: 4 }} numberOfLines={2}>
-                      {uploadedUrl}
-                    </ThemedText>
-                  </View>
-                )}
-              </ThemedView>
-            </View>
-          )}
-
-          {/* TAB 5: SNIPPETS DE EXAMEN */}
-          {activeTab === 'snippets' && (
-            <View style={styles.sectionContainer}>
-              <ThemedView type="backgroundElement" style={styles.card}>
-                <ThemedText type="subtitle">📋 Cheatsheet Rápido para el Examen</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary" style={{ marginTop: 4 }}>
-                  Copia y adapta estos patrones listos durante la prueba:
-                </ThemedText>
-
-                <SnippetCard
-                  title="1. Usar Hook Reactivo de Tabla (1 Línea)"
-                  code={`import { useSupabaseTable } from '@/hooks/useSupabaseTable';
-
-const { data, loading, error, refresh, create, update, remove } = 
-  useSupabaseTable('productos', { realtime: true });`}
-                />
-
-                <SnippetCard
-                  title="2. Insertar Registro con Supabase"
-                  code={`import { supabase } from '@/lib/supabase';
-
-const { data, error } = await supabase
-  .from('tareas')
-  .insert([{ titulo: 'Estudiar', terminada: false }])
-  .select();`}
-                />
-
-                <SnippetCard
-                  title="3. Consultar con Filtros"
-                  code={`const { data, error } = await supabase
-  .from('productos')
-  .select('*')
-  .eq('categoria', 'electronica')
-  .order('precio', { ascending: true });`}
-                />
-
-                <SnippetCard
-                  title="4. Autenticación en Cualquier Pantalla"
-                  code={`import { useAuth } from '@/context/AuthContext';
-
-const { user, isAuthenticated, signIn, signUp, signOut } = useAuth();`}
-                />
-
-                <SnippetCard
-                  title="5. Subir Foto a Storage (Regla ArrayBuffer)"
-                  code={`import { storageService } from '@/services/storageService';
-
-const path = await storageService.uploadFile(
-  'geocam', 
-  \`\${user.id}/foto_\${Date.now()}.jpg\`, 
-  localImageUri
-);`}
-                />
-              </ThemedView>
-            </View>
-          )}
-        </ScrollView>
-      </SafeAreaView>
-    </ThemedView>
-  );
-}
-
-function FeatureItem({ icon, title, desc }: { icon: any; title: string; desc: string }) {
-  return (
-    <View style={styles.featureItem}>
-      <Ionicons name={icon} size={20} color="#2563EB" style={{ marginTop: 2 }} />
-      <View style={{ flex: 1, marginLeft: 10 }}>
-        <ThemedText type="small" style={{ fontWeight: 'bold' }}>
-          {title}
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          {desc}
-        </ThemedText>
-      </View>
-    </View>
-  );
-}
-
-function SnippetCard({ title, code }: { title: string; code: string }) {
-  return (
-    <View style={styles.snippetCard}>
-      <ThemedText type="small" style={{ fontWeight: 'bold', color: '#2563EB' }}>
-        {title}
-      </ThemedText>
-      <ThemedText type="code" style={styles.snippetCode}>
-        {code}
-      </ThemedText>
-    </View>
+              </View>
+            </TouchableOpacity>
+          );
+        }}
+      />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-  },
   safeArea: {
     flex: 1,
+    backgroundColor: '#F3F4F6',
   },
-  scrollContent: {
-    padding: Spacing.three,
-    paddingBottom: Spacing.five * 2,
-  },
-  headerCard: {
-    padding: Spacing.three,
-    borderRadius: 14,
-    marginBottom: Spacing.three,
-  },
-  headerRow: {
+  topBar: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-  },
-  statusBadge: {
+  branding: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+  },
+  appName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  userEmail: {
+    fontSize: 12,
+    color: '#6B7280',
+    maxWidth: 200,
+  },
+  signOutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
-  badgeSuccess: {
-    backgroundColor: '#16A34A',
-  },
-  badgeError: {
-    backgroundColor: '#DC2626',
-  },
-  badgeTesting: {
-    backgroundColor: '#D97706',
-  },
-  statusBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  endpointText: {
-    marginTop: 8,
-    fontSize: 12,
-    opacity: 0.8,
-  },
-  statusMsg: {
-    marginTop: 4,
-    fontSize: 12,
-  },
-  tabBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.three,
-    backgroundColor: 'rgba(128,128,128,0.1)',
-    borderRadius: 10,
-    padding: 4,
-  },
-  tabButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderRadius: 8,
+    backgroundColor: '#FEF2F2',
+    gap: 4,
   },
-  tabButtonActive: {
-    backgroundColor: 'rgba(37,99,235,0.15)',
+  signOutText: {
+    color: '#DC2626',
+    fontSize: 13,
+    fontWeight: '600',
   },
-  tabButtonText: {
+  syncBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    gap: 8,
+  },
+  bannerSuccess: {
+    backgroundColor: '#F0FDF4',
+    borderBottomColor: '#BBF7D0',
+  },
+  bannerError: {
+    backgroundColor: '#FEF2F2',
+    borderBottomColor: '#FECACA',
+  },
+  syncBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  textSuccess: {
+    color: '#15803D',
+  },
+  textError: {
+    color: '#B91C1C',
+  },
+  listContent: {
+    padding: 16,
+    paddingBottom: 32,
+  },
+  metricsContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  metricCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  metricLabel: {
     fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  metricValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginTop: 4,
+  },
+  metricSub: {
+    fontSize: 11,
+    color: '#9CA3AF',
     marginTop: 2,
   },
-  sectionContainer: {
-    marginBottom: Spacing.four,
-  },
-  card: {
-    padding: Spacing.three,
-    borderRadius: 14,
-  },
-  featureList: {
-    marginTop: Spacing.two,
-    gap: 12,
-  },
-  featureItem: {
+  actionsBar: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 18,
   },
-  actionBtn: {
-    backgroundColor: '#2563EB',
+  addButton: {
+    flex: 1.2,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#2563EB',
+    height: 46,
+    borderRadius: 10,
     gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  btnSecondary: {
-    backgroundColor: '#4B5563',
-  },
-  btnSuccess: {
-    backgroundColor: '#16A34A',
-  },
-  btnDanger: {
-    backgroundColor: '#DC2626',
-  },
-  actionBtnText: {
-    color: '#fff',
-    fontSize: 13,
+  addButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
     fontWeight: 'bold',
   },
-  userStatusBox: {
-    marginTop: Spacing.two,
-    padding: Spacing.two,
-    backgroundColor: 'rgba(128,128,128,0.08)',
-    borderRadius: 8,
-  },
-  inputLabel: {
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: 'rgba(128,128,128,0.3)',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 14,
-    color: '#000',
-    backgroundColor: 'rgba(255,255,255,0.9)',
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    marginTop: Spacing.two,
-  },
-  insertBox: {
-    marginTop: Spacing.two,
-    padding: Spacing.two,
-    backgroundColor: 'rgba(128,128,128,0.08)',
-    borderRadius: 8,
-  },
-  recordCard: {
+  syncButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#059669',
+    height: 46,
+    borderRadius: 10,
+    gap: 6,
+    shadowColor: '#059669',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  syncButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  listSectionHeader: {
+    marginBottom: 10,
+  },
+  listSectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  listSectionHelper: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  productCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  productHeader: {
+    flexDirection: 'row',
     justifyContent: 'space-between',
-    padding: 10,
-    marginTop: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(128,128,128,0.2)',
-    backgroundColor: 'rgba(128,128,128,0.05)',
-  },
-  deleteBtn: {
-    padding: 8,
-  },
-  previewBox: {
-    marginTop: Spacing.two,
     alignItems: 'center',
+    marginBottom: 8,
   },
-  imagePreview: {
-    width: '100%',
-    height: 180,
-    borderRadius: 8,
-    marginTop: 6,
+  productName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#111827',
+    flex: 1,
+    marginRight: 8,
   },
-  snippetCard: {
-    marginTop: Spacing.two,
-    padding: Spacing.two,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    borderRadius: 8,
+  syncBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    gap: 4,
   },
-  snippetCode: {
+  badgePending: {
+    backgroundColor: '#FEF3C7',
+  },
+  badgeSynced: {
+    backgroundColor: '#DCFCE7',
+  },
+  syncBadgeText: {
     fontSize: 11,
+    fontWeight: '600',
+  },
+  textPending: {
+    color: '#B45309',
+  },
+  textSynced: {
+    color: '#15803D',
+  },
+  productBody: {},
+  productInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  productDetail: {
+    fontSize: 13,
+    color: '#4B5563',
+  },
+  boldText: {
+    fontWeight: '600',
+    color: '#111827',
+  },
+  productFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  subtotalText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#059669',
+  },
+  deleteIconButton: {
+    padding: 4,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 50,
+    paddingHorizontal: 20,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#4B5563',
+    marginTop: 12,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    textAlign: 'center',
     marginTop: 6,
-    padding: 8,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    borderRadius: 6,
+    lineHeight: 18,
   },
 });
