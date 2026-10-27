@@ -95,17 +95,54 @@ npx expo start -c
 
 ## 📱 3. Evidencias de Funcionamiento (Capturas Requeridas)
 
-Guarda las capturas en la carpeta `capturas/` con los nombres exactos:
+A continuación se presentan las capturas organizadas con su respectiva descripción de funcionamiento:
 
-| Captura | Vista / Estado | Enlace / Imagen |
-| :---: | :--- | :--- |
-| **01** | Inicio de sesión (`app/login.tsx`) | ![01-login](capturas/01-login.png) |
-| **02** | Registro de usuario con validación (`app/registro.tsx`) | ![02-registro](capturas/02-registro.png) |
-| **03** | Pantalla Principal - Inventario (`app/index.tsx`) | ![03-principal](capturas/03-principal.png) |
-| **04** | Formulario Crear / Editar Producto (`app/producto.tsx`) | ![04-formulario](capturas/04-formulario.png) |
-| **05** | Operación Offline en Modo Avión | ![05-sin-conexion](capturas/05-sin-conexion.png) |
-| **06** | Sincronización exitosa con la nube ("X subidos, Y bajados") | ![06-sincronizado](capturas/06-sincronizado.png) |
-| **07** | Tabla de Supabase con los registros respaldados | ![07-supabase](capturas/07-supabase.png) |
+### 🔹 Grupo 1: Flujo de Autenticación y Formulario
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <img src="capturas/01-login.png" width="220" /><br/>
+      <b>01. Inicio de Sesión</b><br/>
+      <sub>Pantalla <code>app/login.tsx</code> con formulario para correo y contraseña, branding de "Mi Tienda" y enlace directo a registro.</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="capturas/02-registro.png" width="220" /><br/>
+      <b>02. Registro de Usuario</b><br/>
+      <sub>Pantalla <code>app/registro.tsx</code> con campos para correo, contraseña y confirmación (validación >= 6 caracteres).</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="capturas/04-formulario.png" width="220" /><br/>
+      <b>04. Formulario de Producto</b><br/>
+      <sub>Pantalla <code>app/producto.tsx</code> para crear o editar productos con validaciones de nombre obligatorio, unidades y precio.</sub>
+    </td>
+  </tr>
+</table>
+
+### 🔹 Grupo 2: Modo Offline y Sincronización con la Nube
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="capturas/05-sin-conexion.png" width="220" /><br/>
+      <b>05. Operación en Modo Avión (Offline-First)</b><br/>
+      <sub>La app sigue operando 100% sobre SQLite local con el celular en modo avión. Se evidencia producto con badge <code>Pendiente</code> y captura elegante de error de red.</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="capturas/06-sincronizado.png" width="220" /><br/>
+      <b>06. Sincronización Exitosa</b><br/>
+      <sub>Banner verde con resultado ("1 subidos, 0 bajados"), 26 unidades totales, $531.000 COP en inventario y productos con badge <code>Sincronizado</code>.</sub>
+    </td>
+  </tr>
+</table>
+
+| Captura | Vista / Estado | Estado en Repositorio |
+| :---: | :--- | :---: |
+| **01** | Inicio de sesión (`app/login.tsx`) | ✅ Agregada |
+| **02** | Registro de usuario con validación (`app/registro.tsx`) | ✅ Agregada |
+| **03** | Pantalla Principal - Inventario (`app/index.tsx`) | ⏳ Pendiente |
+| **04** | Formulario Crear / Editar Producto (`app/producto.tsx`) | ✅ Agregada |
+| **05** | Operación Offline en Modo Avión | ✅ Agregada |
+| **06** | Sincronización exitosa con la nube ("X subidos, Y bajados") | ✅ Agregada |
+| **07** | Tabla de Supabase con los registros respaldados | ⏳ Pendiente |
 
 ---
 
