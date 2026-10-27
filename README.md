@@ -95,7 +95,7 @@ npx expo start -c
 
 ## 📱 3. Evidencias de Funcionamiento (Capturas Requeridas)
 
-A continuación se presentan las capturas organizadas con su respectiva descripción de funcionamiento:
+A continuación se presentan las 7 capturas requeridas organizadas con su respectiva descripción de funcionamiento:
 
 ### 🔹 Grupo 1: Flujo de Autenticación y Formulario
 <table>
@@ -103,7 +103,7 @@ A continuación se presentan las capturas organizadas con su respectiva descripc
     <td align="center" width="33%">
       <img src="capturas/01-login.png" width="220" /><br/>
       <b>01. Inicio de Sesión</b><br/>
-      <sub>Pantalla <code>app/login.tsx</code> con formulario para correo y contraseña, branding de "Mi Tienda" y enlace directo a registro.</sub>
+      <sub>Pantalla <code>app/login.tsx</code> con formulario para correo y contraseña, branding de "Mi Tienda" y enlace a registro.</sub>
     </td>
     <td align="center" width="33%">
       <img src="capturas/02-registro.png" width="220" /><br/>
@@ -118,31 +118,47 @@ A continuación se presentan las capturas organizadas con su respectiva descripc
   </tr>
 </table>
 
-### 🔹 Grupo 2: Modo Offline y Sincronización con la Nube
+### 🔹 Grupo 2: Inventario Principal, Alertas y Operación Offline
 <table>
   <tr>
+    <td align="center" width="50%">
+      <img src="capturas/03-principal.png" width="220" /><br/>
+      <b>03. Pantalla Principal y Diálogo de Confirmación</b><br/>
+      <sub>Vista <code>app/index.tsx</code> mostrando el inventario reactivo con métricas superiores y el diálogo Alert para confirmar la eliminación de un producto en SQLite.</sub>
+    </td>
     <td align="center" width="50%">
       <img src="capturas/05-sin-conexion.png" width="220" /><br/>
       <b>05. Operación en Modo Avión (Offline-First)</b><br/>
       <sub>La app sigue operando 100% sobre SQLite local con el celular en modo avión. Se evidencia producto con badge <code>Pendiente</code> y captura elegante de error de red.</sub>
     </td>
+  </tr>
+</table>
+
+### 🔹 Grupo 3: Sincronización Exitosa y Respaldo en la Nube
+<table>
+  <tr>
     <td align="center" width="50%">
       <img src="capturas/06-sincronizado.png" width="220" /><br/>
       <b>06. Sincronización Exitosa</b><br/>
-      <sub>Banner verde con resultado ("1 subidos, 0 bajados"), 26 unidades totales, $531.000 COP en inventario y productos con badge <code>Sincronizado</code>.</sub>
+      <sub>Banner verde con resultado ("1 subidos, 0 bajados"), 26 unidades totales, $531.000 COP en inventario y productos con badge verde <code>Sincronizado</code>.</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="capturas/07-supabase.png" width="220" /><br/>
+      <b>07. Respaldo en Supabase (Table Editor)</b><br/>
+      <sub>Consola web de Supabase mostrando la tabla <code>public.products</code> con los registros respaldados (Espagueti, Pizza, Frijol), identificadores <code>client_id</code> UUID y políticas RLS activas.</sub>
     </td>
   </tr>
 </table>
 
 | Captura | Vista / Estado | Estado en Repositorio |
 | :---: | :--- | :---: |
-| **01** | Inicio de sesión (`app/login.tsx`) | ✅ Agregada |
-| **02** | Registro de usuario con validación (`app/registro.tsx`) | ✅ Agregada |
-| **03** | Pantalla Principal - Inventario (`app/index.tsx`) | ⏳ Pendiente |
-| **04** | Formulario Crear / Editar Producto (`app/producto.tsx`) | ✅ Agregada |
-| **05** | Operación Offline en Modo Avión | ✅ Agregada |
-| **06** | Sincronización exitosa con la nube ("X subidos, Y bajados") | ✅ Agregada |
-| **07** | Tabla de Supabase con los registros respaldados | ⏳ Pendiente |
+| **01** | Inicio de sesión (`app/login.tsx`) | ✅ Completada |
+| **02** | Registro de usuario con validación (`app/registro.tsx`) | ✅ Completada |
+| **03** | Pantalla Principal - Inventario (`app/index.tsx`) | ✅ Completada |
+| **04** | Formulario Crear / Editar Producto (`app/producto.tsx`) | ✅ Completada |
+| **05** | Operación Offline en Modo Avión | ✅ Completada |
+| **06** | Sincronización exitosa con la nube ("X subidos, Y bajados") | ✅ Completada |
+| **07** | Tabla de Supabase con los registros respaldados | ✅ Completada |
 
 ---
 
