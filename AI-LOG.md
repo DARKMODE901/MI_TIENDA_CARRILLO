@@ -46,3 +46,4 @@ Durante el desarrollo de la aplicación "Mi Tienda", se utilizó un asistente de
 - **TypeScript:** Ejecución de `npx tsc --noEmit` completada con **0 errores**.
 - **Expo Router:** Rutas divididas mediante `Stack.Protected` asegurando que las pantallas privadas no sean accesibles sin sesión activa.
 - **Persistencia Segura:** Autenticación conectada a `expo-secure-store` garantizando que la sesión se mantiene al reiniciar la aplicación.
+
